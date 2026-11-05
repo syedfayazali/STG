@@ -1,12 +1,9 @@
-import * as XLSX from 'xlsx';
+// Browser-side Excel import: parsing, cleaning and validation. Pure functions + SheetJS (global XLSX).
 import { key, boxKey as hkey, words, clean, canonBrand, isBrandWord, recordKeys, dupKey, BRAND_NAMES } from './normalize.js';
-import { FIELDS } from './db.js';
 
 export const TEMPLATE_HEADERS = ['Brand', 'Model', 'Model Number', 'Box Number', 'Variant', 'RAM', 'Storage', 'Color', 'Quantity', 'Notes'];
-export const FIELD_LABELS = {
-  brand: 'Brand', model: 'Model', model_number: 'Model Number', box_number: 'Box Number', variant: 'Variant',
-  ram: 'RAM', storage: 'Storage', color: 'Color', imei: 'IMEI', quantity: 'Quantity', notes: 'Notes',
-};
+export const FIELDS = ['brand', 'model', 'model_number', 'box_number', 'variant', 'ram', 'storage', 'color', 'imei', 'quantity', 'notes'];
+export const FIELD_LABELS = { brand: 'Brand', model: 'Model', model_number: 'Model Number', box_number: 'Box Number', variant: 'Variant', ram: 'RAM', storage: 'Storage', color: 'Color', imei: 'IMEI', quantity: 'Quantity', notes: 'Notes' };
 const SYNONYMS = {
   brand: ['brand', 'make', 'company', 'manufacturer'],
   model: ['model', 'modelname', 'name', 'product', 'phone', 'mobile', 'item'],
@@ -16,16 +13,16 @@ const SYNONYMS = {
   imei: ['imei'], quantity: ['quantity', 'qty', 'units', 'stock', 'count'], notes: ['notes', 'note', 'remarks', 'comment', 'comments'],
 };
 
-// ---------- workbook reading ----------
-export function readWorkbook(buffer) {
-  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: false });
+/** Read an ArrayBuffer (.xlsx / .xls) into sheets of {name, headers, rows}. */
+export function readWorkbook(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
   const sheets = [];
   for (const name of wb.SheetNames) {
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '', blankrows: false, raw: false });
     const rows = aoa.filter((r) => r.some((c) => clean(c) !== ''));
     if (rows.length < 2) continue;
     const headers = rows[0].map((h, i) => clean(h) || `Column ${i + 1}`);
-    sheets.push({ name, headers, rows: rows.slice(1), headerRow: 1 });
+    sheets.push({ name, headers, rows: rows.slice(1) });
   }
   return sheets;
 }
@@ -33,14 +30,13 @@ export function readWorkbook(buffer) {
 export function detectMode(headers) {
   const hk = headers.map((h) => hkey(h));
   const hasBox = hk.some((h) => SYNONYMS.box_number.includes(h));
-  const brandCols = headers.filter((h) => isBrandWord(key(h)) || BRAND_NAMES[key(h)]);
+  const brandCols = headers.filter((h) => BRAND_NAMES[key(h)]);
   const hasModel = hk.some((h) => SYNONYMS.model.includes(h));
   return hasBox && brandCols.length >= 4 && !hk.includes('brand') ? 'chart' : hasModel || hk.includes('brand') ? 'flat' : brandCols.length >= 4 ? 'chart' : 'flat';
 }
 
 export function suggestFlat(headers) {
-  const map = {};
-  const used = new Set();
+  const map = {}, used = new Set();
   for (const f of Object.keys(SYNONYMS)) {
     const idx = headers.findIndex((h, i) => !used.has(i) && SYNONYMS[f].includes(hkey(h)));
     if (idx >= 0) { map[f] = headers[idx]; used.add(idx); }
@@ -52,8 +48,7 @@ export function suggestChart(headers) {
   const hk = headers.map((h) => hkey(h));
   const box = headers[hk.findIndex((h) => SYNONYMS.box_number.includes(h))] || headers[0];
   const label = headers.find((h, i) => ['postermodel', 'poster', 'label', 'title'].includes(hk[i])) || '';
-  const brandColumns = headers.filter((h) => h !== box && h !== label && BRAND_NAMES[key(h)])
-    .map((h) => ({ column: h, brand: canonBrand(h) }));
+  const brandColumns = headers.filter((h) => h !== box && h !== label && BRAND_NAMES[key(h)]).map((h) => ({ column: h, brand: canonBrand(h) }));
   return { boxColumn: box, labelColumn: label, brandColumns };
 }
 
@@ -143,20 +138,13 @@ function reviewReason(model) {
 }
 
 // ---------- analysis ----------
-function existingKeys(db) {
-  const set = new Set();
-  for (const r of db.prepare('SELECT brand_key, model_key, number_key, box_key FROM inventory').iterate()) set.add(dupKey(r));
-  return set;
-}
-
 /**
- * Turn a sheet + config into candidate records and validation results. Pure w.r.t. the sheet; reads DB only for duplicate checks.
- * cfg: { mode, flat:{mapping, keepExtra}, chart:{boxColumn,labelColumn,brandColumns:[{column,brand}]}, skipExisting }
+ * Turn a sheet + config into candidate records and validation results.
+ * existing: Set of "brand|model|number|box" keys already in the database (from the existing_keys() function).
  */
-export function analyze(db, sheet, cfg) {
+export function analyze(sheet, cfg, existing) {
   const idx = Object.fromEntries(sheet.headers.map((h, i) => [h, i]));
-  const cand = []; // {row, rec}
-  const errors = [];
+  const cand = [], errors = [];
   const err = (row, reason, data) => errors.push({ row, reason, data });
 
   if (cfg.mode === 'chart') {
@@ -166,17 +154,12 @@ export function analyze(db, sheet, cfg) {
     const cols = (c.brandColumns || []).filter((b) => idx[b.column] != null && clean(b.brand));
     if (!cols.length) throw new Error('Choose at least one brand column');
     sheet.rows.forEach((r, i) => {
-      const rowNo = i + 2;
-      const box = clean(r[bi]);
+      const rowNo = i + 2, box = clean(r[bi]);
       const label = c.labelColumn && idx[c.labelColumn] != null ? clean(r[idx[c.labelColumn]]) : '';
       if (!box) { if (cols.some((b) => clean(r[idx[b.column]]))) err(rowNo, 'Missing box number', { label }); return; }
-      for (const b of cols) {
-        for (const m of parseChartCell(r[idx[b.column]], canonBrand(b.brand))) {
-          cand.push({ row: rowNo, rec: {
-            brand: m.brand, model: m.model, model_number: '', box_number: box, variant: '', ram: '', storage: '', color: '',
-            imei: '', quantity: null, notes: m.inferred ? `Model family "${m.inferred}" inferred from the entry before it in the chart` : '', extra: label ? { poster_model: label } : {}, review_reason: reviewReason(m.model),
-          } });
-        }
+      for (const b of cols) for (const m of parseChartCell(r[idx[b.column]], canonBrand(b.brand))) {
+        cand.push({ row: rowNo, rec: { brand: m.brand, model: m.model, model_number: '', box_number: box, variant: '', ram: '', storage: '', color: '', imei: '', quantity: null,
+          notes: m.inferred ? `Model family "${m.inferred}" inferred from the entry before it in the chart` : '', extra: label ? { poster_model: label } : {}, review_reason: reviewReason(m.model) } });
       }
     });
   } else {
@@ -202,37 +185,38 @@ export function analyze(db, sheet, cfg) {
     });
   }
 
-  // duplicates
-  const inDb = existingKeys(db);
-  const seen = new Map();
-  const toImport = [], dupFile = [], dupDb = [];
+  const seen = new Map(), toImport = [], dupFile = [], dupDb = [];
   for (const c of cand) {
-    const dk = dupKey(recordKeys(c.rec));
+    const k = recordKeys(c.rec);
+    const dk = [k.brand_key, k.model_key, k.number_key, k.box_key].join('|');
     if (seen.has(dk)) { dupFile.push({ row: c.row, rec: c.rec, firstRow: seen.get(dk) }); continue; }
     seen.set(dk, c.row);
-    if (inDb.has(dk)) { dupDb.push({ row: c.row, rec: c.rec }); if (cfg.skipExisting !== false) continue; c.rec.review_reason ||= 'Possible duplicate of an existing record'; }
+    if (existing.has(dk)) { dupDb.push({ row: c.row, rec: c.rec }); if (cfg.skipExisting !== false) continue; c.rec.review_reason ||= 'Possible duplicate of an existing record'; }
     toImport.push(c);
   }
+  return { totalRows: sheet.rows.length, candidates: cand.length, toImport, errors, dupFile, dupDb, flagged: toImport.filter((c) => c.rec.review_reason).length };
+}
+
+/** Database row for a candidate record (keys computed with the same normaliser the search uses). */
+export function toDbRow(rec, batchId, source = 'import') {
+  const k = recordKeys(rec);
   return {
-    totalRows: sheet.rows.length,
-    candidates: cand.length,
-    toImport, errors, dupFile, dupDb,
-    flagged: toImport.filter((c) => c.rec.review_reason).length,
+    brand: rec.brand, model: rec.model, model_number: rec.model_number || '', box_number: rec.box_number,
+    variant: rec.variant || '', ram: rec.ram || '', storage: rec.storage || '', color: rec.color || '', imei: rec.imei || '',
+    quantity: rec.quantity ?? null, notes: rec.notes || '', extra: rec.extra || {}, review_reason: rec.review_reason || '',
+    source, batch_id: batchId ?? null, ...k,
   };
 }
 
 // ---------- Excel output ----------
-export function buildWorkbook(rows, headers) {
+export function downloadXlsx(filename, headers, rows) {
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   ws['!cols'] = headers.map((h) => ({ wch: Math.max(12, h.length + 2) }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Inventory');
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  XLSX.writeFile(wb, filename);
 }
-
-export function templateBuffer() {
-  return buildWorkbook([
-    ['Samsung', 'Galaxy A15', 'SM-A155F', 'BOX-102', '8GB/128GB', '8GB', '128GB', 'Blue', 8, 'Example row - delete me'],
-    ['Apple', 'iPhone 15', 'A3090', 'BOX-205', '', '6GB', '128GB', 'Black', 2, ''],
-  ], TEMPLATE_HEADERS);
-}
+export const downloadTemplate = () => downloadXlsx('inventory-template.xlsx', TEMPLATE_HEADERS, [
+  ['Samsung', 'Galaxy A15', 'SM-A155F', 'BOX-102', '8GB/128GB', '8GB', '128GB', 'Blue', 8, 'Example row - delete me'],
+  ['Apple', 'iPhone 15', 'A3090', 'BOX-205', '', '6GB', '128GB', 'Black', 2, ''],
+]);

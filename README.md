@@ -1,47 +1,40 @@
-# New Trendz Mobiles & Electronics — Inventory Lookup
+# Smart Tempered Glass
 
-Type a phone brand / model / model number → get the **box number**.
-Excel / manual entry → SQLite database → backend search → box number.
+Tempered-glass compatibility finder: type a brand, model or model number → get the **box number**.
+Static website (no build step) + Supabase (Postgres, Auth, row-level security).
 
-## Run it
-Requires Node.js 22.13 or newer.
+## What is where
+- `index.html`, `css/styles.css`, `js/` — the website (glassmorphism design, search, admin, import/export).
+- `vendor/` — supabase-js and SheetJS 0.20.3 (Excel), bundled locally (no CDN needed).
+- `js/config.js` — Supabase URL + **publishable** key (safe to ship; security is enforced by the database).
+- Database (Supabase project **stg**, `ekviqmjuiusxtzdqwrvu`, Mumbai): tables `inventory`, `import_batches`, `audit_log`, `admins`;
+  functions `search_inventory`, `public_brands` (public) and `dashboard_stats`, `duplicate_groups`, `existing_keys`, `is_admin` (admin only).
 
-    npm install
-    ADMIN_PASSWORD='choose-a-password' npm start      # http://localhost:3000
+## Who can do what (enforced in Postgres, not just the UI)
+| | Visitors / staff | Admin (row in `admins`) |
+|---|---|---|
+| Search, see box numbers, browse brands | ✅ | ✅ |
+| Read/write tables directly | ❌ | ✅ |
+| Dashboard, add/edit/delete, bulk actions, import/export, duplicates, audit log | ❌ | ✅ |
 
-If `ADMIN_PASSWORD` is not set, a random one is generated and printed **once** on first start.
-Staff open the site and search (no login). Administrators sign in via "Admin sign in" (top right).
-Set `SEARCH_REQUIRES_LOGIN=1` to require login for search too. Extra accounts:
-`npm run create-user -- <name> <password> [admin|staff]`.
-See `.env.example` for all settings. Back up `data/inventory.db` to back up everything.
+## Deploy
+Any static host works. On **Vercel**: import the GitHub repo → Framework "Other" → no build command → output directory `.` (root).
+Then in Supabase → Authentication → URL Configuration, set **Site URL** to your live address and add it under **Redirect URLs**
+(needed for the "Forgot password?" email link).
 
-## Your STGLASS.xlsx
-It is a *compatibility chart* (one row per box, one column per brand, models separated by "/"), not a
-one-row-per-phone list. The importer auto-detects this and splits every cell into one record per model
-per box (e.g. 138 boxes → ~1,670 searchable records). Cleanups it applies: brand shorthand (SAM, R-ME, RM, 1+, IQ00, TECHNO…),
-"A3(4G/5G)" → A3 / A3 4G / A3 5G, a lone "5G" continuing the previous model, bare numbers after
-SPARK/HOT/CAMON inheriting the family, repeated brand names splitting glued entries.
-Entries that look like several models joined without a "/" are imported but flagged **needs review**
-(shown with a ⚠ in search and listed under Inventory → "Needs review only"). Records appear exactly as in the
-file; the original box label ("POSTER MODEL") is stored as a custom field and shown as "Box card".
+## Admin tasks
+- Sign in at `#/login` (the site's "Sign in" link). Forgot password → "Forgot password?" on that screen, or Admin → Account to change it.
+- Add another admin: sign them up in Supabase → Authentication → Users, then run in the SQL editor:
+  `insert into public.admins (user_id) select id from auth.users where email = 'person@example.com';`
+- Recommended: Supabase → Authentication → Providers/Policies → enable **Leaked password protection**.
 
 ## How search decides
-Normalises case, spaces, hyphens, brand shorthand and filler words ("Galaxy"). Order of preference:
-1 exact model number → 2 exact model / brand+model → 3 starts-with → 4 partial.
-Exact matches are shown first and large; everything else is labelled "Model Match", "Partial Match" or
-"Brand Match". The same phone in several boxes appears once with **every** box. Different phones with the same
-name (Samsung A12 vs Oppo A12) are never merged. No match ⇒ "No matching mobile found" — a box number is never guessed.
+Query is normalised in the browser (`js/normalize.js`: case, spaces, hyphens, shorthand like SAM/R-ME/RM/1+, filler "Galaxy"), then
+`search_inventory` ranks: exact model number → exact model / brand+model → starts-with → partial. Exact matches are shown first and
+big; the same phone in several boxes appears once with every box; different phones with the same name (Samsung A12 vs Oppo A12)
+are never merged; no match ⇒ "No matching mobile found" — a box number is never guessed.
 
-## Admin
-Dashboard · Inventory (search, filter, sort, edit, delete, bulk move/delete with confirmation, add model with
-custom fields) · Import/Export (template, column mapping, preview, validation, duplicate detection, undo an import)
-· Duplicates (review only, nothing auto-deleted) · Audit log.
-
-## Layout
-    server.js          HTTP API, auth, audit            lib/search.js     tiered search
-    lib/normalize.js   keys + brand aliases             lib/importer.js   Excel parsing / validation
-    lib/db.js          schema (indexed key columns)     public/           the web app
-    tests/app.test.js  `npm test`
-
-Ready for later: `uid`, `branch_id`, `imei`, `quantity`, free-form `extra` JSON columns, roles table
-(barcode/QR, stock in/out, shelf/rack, WhatsApp share can be added without schema rewrites).
+## Data
+STGLASS.xlsx is a compatibility chart (row = box, column = brand, models separated by "/"). Import → "Compatibility chart" splits each cell into one
+record per model per box. 1,670 records are loaded (76 repeats skipped, 27 flagged "needs review" where several models look glued together).
+Imports can be undone from the dashboard.
