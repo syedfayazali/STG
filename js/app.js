@@ -174,7 +174,7 @@ function viewHome() {
   if (lastQuery) runSearch(lastQuery); else q.focus();
 }
 
-const TIER = { 0: ['Brand Match', 'brand'], 1: ['Exact Match', 'exact'], 2: ['Exact Match', 'exact'], 3: ['Model Match', 'model'], 4: ['Partial Match', 'partial'] };
+const TIER = { 0: ['Brand Match', 'brand'], 1: ['Exact Match', 'exact'], 2: ['Exact Match', 'exact'], 3: ['Model Match', 'model'], 4: ['Partial Match', 'partial'], 5: ['Similar spelling', 'partial'] };
 function groupRows(rows) {
   const groups = new Map();
   for (const r of rows) {
@@ -237,7 +237,10 @@ function renderResults(d) {
     if (d.others.length) html += `<details class="more"><summary>Show ${d.others.length} similar model${d.others.length === 1 ? '' : 's'}</summary>${d.others.map((g) => groupCard(g, { compact: true })).join('')}</details>`;
   } else {
     const brandOnly = d.others.every((g) => g.tier === 0);
-    html += brandOnly
+    const typo = d.others.every((g) => g.tier === 5);
+    html += typo
+      ? `<div class="sect">Did you mean…?</div><div class="banner warn">Nothing matches “${esc(d.query)}” exactly. These models have a <b>similar spelling</b> — confirm the model before taking a box.</div>`
+      : brandOnly
       ? `<div class="sect">All ${esc(d.others[0].brand)} models</div><div class="banner info">Add the model name to narrow this down${d.truncated ? ' — showing the first results only' : ''}.</div>`
       : `<div class="sect">No exact match — possible matches</div><div class="banner warn">Nothing matches “${esc(d.query)}” exactly. These are <b>possible</b> matches — please check each one.</div>`;
     html += d.others.map((g) => groupCard(g, { compact: true })).join('');
