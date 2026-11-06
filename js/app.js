@@ -55,7 +55,12 @@ const route = () => (location.hash.replace(/^#\/?/, '') || '').split('?')[0];
 const query = () => new URLSearchParams(location.hash.split('?')[1] || '');
 window.addEventListener('hashchange', render);
 
+const BRAND_LOGOS = new Map();
+async function loadLogos() {
+  try { const r = await fetch('assets/brands/manifest.json', { cache: 'no-cache' }); if (r.ok) (await r.json()).forEach((f) => BRAND_LOGOS.set(f.replace(/\.[a-z]+$/i, '').toLowerCase(), f)); } catch {}
+}
 async function boot() {
+  await loadLogos();
   const { data } = await sb.auth.getSession();
   state.session = data.session;
   await refreshAdmin();
@@ -166,7 +171,7 @@ function viewHome() {
   $('#sf').onsubmit = (e) => { e.preventDefault(); clearTimeout(t); runSearch(q.value); q.blur(); };
   loadBrands().then((b) => {
     const grid = $('#brands'); if (!grid) return;
-    grid.innerHTML = b.map((x) => `<button class="glass brandtile" data-b="${esc(x.brand)}"><b>${esc(x.brand)}</b><span>${fmt(x.records)} listing${x.records === 1 ? '' : 's'}</span></button>`).join('') || '<p class="muted">No inventory yet.</p>';
+    grid.innerHTML = b.map((x) => `<button class="glass brandtile" data-b="${esc(x.brand)}">${brandMark(x.brand)}<b>${esc(x.brand)}</b><span>${fmt(x.records)} listing${x.records === 1 ? '' : 's'}</span></button>`).join('') || '<p class="muted">No inventory yet.</p>';
     $$('.brandtile', grid).forEach((el) => (el.onclick = () => { q.value = el.dataset.b; runSearch(el.dataset.b); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
     $('#quick').innerHTML = b.slice(0, 6).map((x) => `<button class="chip" data-b="${esc(x.brand)}">${esc(x.brand)}</button>`).join('');
     $$('#quick .chip').forEach((el) => (el.onclick = () => { q.value = el.dataset.b; runSearch(el.dataset.b); }));
@@ -174,6 +179,15 @@ function viewHome() {
   if (lastQuery) runSearch(lastQuery); else q.focus();
 }
 
+// Brand marks: uses assets/brands/<slug>.svg|png when you add an official logo file, otherwise a clean monogram.
+const LOGO_ALIAS = { iphone: 'apple', ios: 'apple', mi: 'xiaomi', redmi: 'redmi', poco: 'poco' };
+function brandMark(name, cls = '') {
+  const raw = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const slug = LOGO_ALIAS[raw] && !BRAND_LOGOS.has(raw) ? LOGO_ALIAS[raw] : raw;
+  const file = BRAND_LOGOS.get(slug) || BRAND_LOGOS.get(raw);
+  const mono = esc(String(name || '?').trim().slice(0, 2).toUpperCase());
+  return file ? `<span class="bmark ${cls}"><img src="assets/brands/${file}" alt="" loading="lazy"></span>` : `<span class="bmark mono ${cls}" aria-hidden="true">${mono}</span>`;
+}
 const TIER = { 0: ['Brand Match', 'brand'], 1: ['Exact Match', 'exact'], 2: ['Exact Match', 'exact'], 3: ['Model Match', 'model'], 4: ['Partial Match', 'partial'], 5: ['Similar spelling', 'partial'] };
 function groupRows(rows) {
   const groups = new Map();
@@ -217,7 +231,7 @@ function groupCard(g, { exact, compact }) {
   const notes = [...new Set(g.boxes.map((b) => b.notes).filter(Boolean))];
   const poster = [...new Set(g.boxes.map((b) => b.poster_model).filter(Boolean))];
   return `<article class="glass card ${exact ? 'exact' : ''} ${compact ? 'compact' : ''}"><div>
-    ${g.brand ? `<div class="brandline">${esc(g.brand)}</div>` : ''}<h3>${esc(g.model)}</h3>
+    ${g.brand ? `<div class="brandline">${brandMark(g.brand, 'sm')}${esc(g.brand)}</div>` : ''}<h3>${esc(g.model)}</h3>
     <div class="meta">${g.model_number ? `<span>Model No. <b>${esc(g.model_number)}</b></span>` : ''}<span class="badge ${cls}">${type}</span>${g.boxes.length > 1 ? `<span>in ${g.boxes.length} boxes</span>` : ''}</div>
     ${!compact && poster.length ? `<div class="note">Box card: ${esc(poster.join(', '))}</div>` : ''}
     ${warn.length ? `<div class="warnline">⚠ Unverified entry — ${esc(warn[0])}. Please double-check the box.</div>` : ''}
