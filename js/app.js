@@ -40,9 +40,16 @@ const ICON_SEARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9dc3f5"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="#16223f"/><rect x="19" y="9" width="26" height="46" rx="6" fill="none" stroke="url(#lg)" stroke-width="3.5"/><path d="M26 12 L38 12 L24 52 L19 52 Z" fill="#fff" opacity=".22"/><circle cx="32" cy="48" r="2.4" fill="url(#lg)"/></svg>`;
 
 // ------------------------------------------------------------------ auth + routing
-async function refreshAdmin() {
-  state.isAdmin = false;
-  if (state.session) { const { data } = await sb.rpc('is_admin'); state.isAdmin = data === true; }
+let adminCheck = null;
+function refreshAdmin() {
+  // Never flip isAdmin to false while a check is running (that raced with login and showed "not an admin").
+  if (!state.session) { state.isAdmin = false; return Promise.resolve(); }
+  const uid = state.session.user.id;
+  if (adminCheck && adminCheck.uid === uid) return adminCheck.p;
+  const p = sb.rpc('is_admin').then(({ data, error }) => { if (!error) state.isAdmin = data === true; })
+    .catch(() => {}).finally(() => { adminCheck = null; });
+  adminCheck = { uid, p };
+  return p;
 }
 const route = () => (location.hash.replace(/^#\/?/, '') || '').split('?')[0];
 const query = () => new URLSearchParams(location.hash.split('?')[1] || '');
@@ -55,7 +62,7 @@ async function boot() {
   sb.auth.onAuthStateChange((ev, s) => {
     state.session = s;
     if (ev === 'PASSWORD_RECOVERY') setTimeout(() => { location.hash = '#/reset'; render(); }, 0);
-    else if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED'].includes(ev)) setTimeout(async () => { await refreshAdmin(); if (ev === 'SIGNED_OUT') render(); }, 0);
+    else if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED'].includes(ev)) setTimeout(async () => { await refreshAdmin(); if (ev === 'SIGNED_OUT' || (ev === 'SIGNED_IN' && route() !== 'login')) render(); }, 0);
   });
   render();
 }
