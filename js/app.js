@@ -37,7 +37,7 @@ async function audit(action, recordId = null, detail = '') {
 const labelOf = (r) => [r.brand, r.model, r.model_number && `(${r.model_number})`].filter(Boolean).join(' ') + ` in ${r.box_number}`;
 
 const ICON_SEARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
-const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#8b6cff"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="#0a1433"/><rect x="19" y="9" width="26" height="46" rx="6" fill="none" stroke="url(#lg)" stroke-width="3.5"/><path d="M26 12 L38 12 L24 52 L19 52 Z" fill="#fff" opacity=".22"/><circle cx="32" cy="48" r="2.4" fill="url(#lg)"/></svg>`;
+const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9dc3f5"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="#16223f"/><rect x="19" y="9" width="26" height="46" rx="6" fill="none" stroke="url(#lg)" stroke-width="3.5"/><path d="M26 12 L38 12 L24 52 L19 52 Z" fill="#fff" opacity=".22"/><circle cx="32" cy="48" r="2.4" fill="url(#lg)"/></svg>`;
 
 // ------------------------------------------------------------------ auth + routing
 async function refreshAdmin() {
@@ -159,7 +159,7 @@ function viewHome() {
   $('#sf').onsubmit = (e) => { e.preventDefault(); clearTimeout(t); runSearch(q.value); q.blur(); };
   loadBrands().then((b) => {
     const grid = $('#brands'); if (!grid) return;
-    grid.innerHTML = b.map((x) => `<button class="brandtile" data-b="${esc(x.brand)}"><b>${esc(x.brand)}</b><span>${fmt(x.records)} listing${x.records === 1 ? '' : 's'}</span></button>`).join('') || '<p class="muted">No inventory yet.</p>';
+    grid.innerHTML = b.map((x) => `<button class="glass brandtile" data-b="${esc(x.brand)}"><b>${esc(x.brand)}</b><span>${fmt(x.records)} listing${x.records === 1 ? '' : 's'}</span></button>`).join('') || '<p class="muted">No inventory yet.</p>';
     $$('.brandtile', grid).forEach((el) => (el.onclick = () => { q.value = el.dataset.b; runSearch(el.dataset.b); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
     $('#quick').innerHTML = b.slice(0, 6).map((x) => `<button class="chip" data-b="${esc(x.brand)}">${esc(x.brand)}</button>`).join('');
     $$('#quick .chip').forEach((el) => (el.onclick = () => { q.value = el.dataset.b; runSearch(el.dataset.b); }));
