@@ -145,7 +145,9 @@ function viewNotAdmin() {
 // ------------------------------------------------------------------ home + search
 let lastQuery = '', searchSeq = 0, brandsCache = null;
 async function loadBrands() {
-  if (!brandsCache) { const { data } = await sb.rpc('public_brands'); brandsCache = data || []; }
+  if (!brandsCache) { const { data } = await sb.rpc('public_brands'); brandsCache = data || [];
+    // Apple/iPhone always has a tile so wholesalers can find it; it shows real listings once iPhone data is imported.
+    if (!brandsCache.some((b) => String(b.brand).toLowerCase() === 'apple')) brandsCache = [...brandsCache, { brand: 'Apple', records: 0 }]; }
   return brandsCache;
 }
 function viewHome() {
@@ -172,7 +174,7 @@ function viewHome() {
   $('#sf').onsubmit = (e) => { e.preventDefault(); clearTimeout(t); runSearch(q.value); q.blur(); };
   loadBrands().then((b) => {
     const grid = $('#brands'); if (!grid) return;
-    grid.innerHTML = b.map((x) => `<button class="glass brandtile" data-b="${esc(x.brand)}">${brandMark(x.brand)}<b>${esc(x.brand)}</b><span>${fmt(x.records)} listing${x.records === 1 ? '' : 's'}</span></button>`).join('') || '<p class="muted">No inventory yet.</p>';
+    grid.innerHTML = b.map((x) => `<button class="glass brandtile" data-b="${esc(x.brand)}">${brandMark(x.brand)}<b>${esc(x.brand)}</b><span>${x.records ? `${fmt(x.records)} listing${x.records === 1 ? '' : 's'}` : 'Coming soon'}</span></button>`).join('') || '<p class="muted">No inventory yet.</p>';
     $$('.brandtile', grid).forEach((el) => (el.onclick = () => { q.value = el.dataset.b; runSearch(el.dataset.b); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
     $('#quick').innerHTML = b.slice(0, 6).map((x) => `<button class="chip" data-b="${esc(x.brand)}">${esc(x.brand)}</button>`).join('');
     $$('#quick .chip').forEach((el) => (el.onclick = () => { q.value = el.dataset.b; runSearch(el.dataset.b); }));
