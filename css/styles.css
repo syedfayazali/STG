@@ -236,3 +236,7 @@ footer.site .contact { display: block; margin-top: 6px; color: var(--accent); fo
 .crow { display: grid; grid-template-columns: 1fr 110px auto auto; gap: 10px; align-items: center; padding: 10px 14px; margin-bottom: 8px; }
 .crow .cbox { min-width: 0; }
 @media (max-width: 640px) { .crow { grid-template-columns: 1fr 1fr; } .crow > div:first-child { grid-column: 1 / -1; } }
+
+footer.site .credit { display: block; margin-top: 8px; font-size: 13px; color: var(--faint); }
+footer.site .credit a { color: var(--accent); font-weight: 700; text-decoration: none; }
+footer.site .credit a:hover { text-decoration: underline; }
