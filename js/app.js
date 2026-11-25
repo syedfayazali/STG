@@ -37,25 +37,37 @@ async function audit(action, recordId = null, detail = '') {
 const labelOf = (r) => [r.brand, r.model, r.model_number && `(${r.model_number})`].filter(Boolean).join(' ') + ` in ${r.box_number}`;
 
 const ICON_SEARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
-const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9dc3f5"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="#16223f"/><rect x="19" y="9" width="26" height="46" rx="6" fill="none" stroke="url(#lg)" stroke-width="3.5"/><path d="M26 12 L38 12 L24 52 L19 52 Z" fill="#fff" opacity=".22"/><circle cx="32" cy="48" r="2.4" fill="url(#lg)"/></svg>`;
+const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f0c24b"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="#16223f"/><rect x="19" y="9" width="26" height="46" rx="6" fill="none" stroke="url(#lg)" stroke-width="3.5"/><path d="M26 12 L38 12 L24 52 L19 52 Z" fill="#fff" opacity=".22"/><circle cx="32" cy="48" r="2.4" fill="url(#lg)"/></svg>`;
 
 // ------------------------------------------------------------------ auth + routing
-async function refreshAdmin() {
-  state.isAdmin = false;
-  if (state.session) { const { data } = await sb.rpc('is_admin'); state.isAdmin = data === true; }
+let adminCheck = null;
+function refreshAdmin() {
+  // Never flip isAdmin to false while a check is running (that raced with login and showed "not an admin").
+  if (!state.session) { state.isAdmin = false; return Promise.resolve(); }
+  const uid = state.session.user.id;
+  if (adminCheck && adminCheck.uid === uid) return adminCheck.p;
+  const p = sb.rpc('is_admin').then(({ data, error }) => { if (!error) state.isAdmin = data === true; })
+    .catch(() => {}).finally(() => { adminCheck = null; });
+  adminCheck = { uid, p };
+  return p;
 }
 const route = () => (location.hash.replace(/^#\/?/, '') || '').split('?')[0];
 const query = () => new URLSearchParams(location.hash.split('?')[1] || '');
 window.addEventListener('hashchange', render);
 
+const BRAND_LOGOS = new Map();
+async function loadLogos() {
+  try { const r = await fetch('assets/brands/manifest.json', { cache: 'no-cache' }); if (r.ok) (await r.json()).forEach((f) => BRAND_LOGOS.set(f.replace(/\.[a-z]+$/i, '').toLowerCase(), f)); } catch {}
+}
 async function boot() {
+  await loadLogos();
   const { data } = await sb.auth.getSession();
   state.session = data.session;
   await refreshAdmin();
   sb.auth.onAuthStateChange((ev, s) => {
     state.session = s;
     if (ev === 'PASSWORD_RECOVERY') setTimeout(() => { location.hash = '#/reset'; render(); }, 0);
-    else if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED'].includes(ev)) setTimeout(async () => { await refreshAdmin(); if (ev === 'SIGNED_OUT') render(); }, 0);
+    else if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED'].includes(ev)) setTimeout(async () => { await refreshAdmin(); if (ev === 'SIGNED_OUT' || (ev === 'SIGNED_IN' && route() !== 'login')) render(); }, 0);
   });
   render();
 }
@@ -143,7 +155,8 @@ function viewHome() {
     <p class="lead">Type a brand, model or model number. Get the box it lives in — instantly.</p>
     <form class="searchbar glass" id="sf" role="search"><label class="field">${ICON_SEARCH}<input id="q" type="search" placeholder="Search mobile model, brand or model number…" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" aria-label="Search mobile model, brand or model number" value="${esc(lastQuery)}"></label>
     <button class="btn primary big">Search Inventory</button></form>
-    <div class="chips" id="quick"></div></section>
+    <div class="chips" id="quick"></div>
+    <div class="wholesale"><span class="tag">Box wise data</span><span class="tag red">For wholesalers only</span><a class="callbtn" href="tel:+917981710834" aria-label="Call 7981710834">&#9742; 7981710834</a></div></section>
   <div class="results" id="res" aria-live="polite"></div>
   <div id="browse">
     <section class="section"><h2>Browse by brand</h2><p class="sub">Tap a brand to see everything listed for it.</p><div class="brandgrid" id="brands"><div class="spin">Loading…</div></div></section>
@@ -152,14 +165,14 @@ function viewHome() {
       <div class="glass step"><div class="n">2</div><h3>Read the box number</h3><p>Exact matches show first, big and clear. Same phone in several boxes? Every box is listed.</p></div>
       <div class="glass step"><div class="n">3</div><h3>Pick the glass</h3><p>Nothing is guessed — if there's no verified match, we say so.</p></div></div></section>
   </div></main>
-  <footer class="site">© ${new Date().getFullYear()} Smart Tempered Glass · <a href="#/login">Admin</a></footer>`;
+  <footer class="site">© ${new Date().getFullYear()} Smart Tempered Glass · <a href="#/login">Admin</a><span class="contact">Box wise data · For wholesalers only · <a href="tel:+917981710834">7981710834</a></span></footer>`;
   bindNav();
   const q = $('#q'); let t;
   q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => runSearch(q.value), 230); });
   $('#sf').onsubmit = (e) => { e.preventDefault(); clearTimeout(t); runSearch(q.value); q.blur(); };
   loadBrands().then((b) => {
     const grid = $('#brands'); if (!grid) return;
-    grid.innerHTML = b.map((x) => `<button class="glass brandtile" data-b="${esc(x.brand)}"><b>${esc(x.brand)}</b><span>${fmt(x.records)} listing${x.records === 1 ? '' : 's'}</span></button>`).join('') || '<p class="muted">No inventory yet.</p>';
+    grid.innerHTML = b.map((x) => `<button class="glass brandtile" data-b="${esc(x.brand)}">${brandMark(x.brand)}<b>${esc(x.brand)}</b><span>${fmt(x.records)} listing${x.records === 1 ? '' : 's'}</span></button>`).join('') || '<p class="muted">No inventory yet.</p>';
     $$('.brandtile', grid).forEach((el) => (el.onclick = () => { q.value = el.dataset.b; runSearch(el.dataset.b); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
     $('#quick').innerHTML = b.slice(0, 6).map((x) => `<button class="chip" data-b="${esc(x.brand)}">${esc(x.brand)}</button>`).join('');
     $$('#quick .chip').forEach((el) => (el.onclick = () => { q.value = el.dataset.b; runSearch(el.dataset.b); }));
@@ -167,7 +180,16 @@ function viewHome() {
   if (lastQuery) runSearch(lastQuery); else q.focus();
 }
 
-const TIER = { 0: ['Brand Match', 'brand'], 1: ['Exact Match', 'exact'], 2: ['Exact Match', 'exact'], 3: ['Model Match', 'model'], 4: ['Partial Match', 'partial'] };
+// Brand marks: uses assets/brands/<slug>.svg|png when you add an official logo file, otherwise a clean monogram.
+const LOGO_ALIAS = { iphone: 'apple', ios: 'apple', mi: 'xiaomi', redmi: 'redmi', poco: 'poco' };
+function brandMark(name, cls = '') {
+  const raw = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const slug = LOGO_ALIAS[raw] && !BRAND_LOGOS.has(raw) ? LOGO_ALIAS[raw] : raw;
+  const file = BRAND_LOGOS.get(slug) || BRAND_LOGOS.get(raw);
+  const mono = esc(String(name || '?').trim().slice(0, 2).toUpperCase());
+  return file ? `<span class="bmark ${cls}"><img src="assets/brands/${file}" alt="" loading="lazy"></span>` : `<span class="bmark mono ${cls}" aria-hidden="true">${mono}</span>`;
+}
+const TIER = { 0: ['Brand Match', 'brand'], 1: ['Exact Match', 'exact'], 2: ['Exact Match', 'exact'], 3: ['Model Match', 'model'], 4: ['Partial Match', 'partial'], 5: ['Similar spelling', 'partial'] };
 function groupRows(rows) {
   const groups = new Map();
   for (const r of rows) {
@@ -210,7 +232,7 @@ function groupCard(g, { exact, compact }) {
   const notes = [...new Set(g.boxes.map((b) => b.notes).filter(Boolean))];
   const poster = [...new Set(g.boxes.map((b) => b.poster_model).filter(Boolean))];
   return `<article class="glass card ${exact ? 'exact' : ''} ${compact ? 'compact' : ''}"><div>
-    ${g.brand ? `<div class="brandline">${esc(g.brand)}</div>` : ''}<h3>${esc(g.model)}</h3>
+    ${g.brand ? `<div class="brandline">${brandMark(g.brand, 'sm')}${esc(g.brand)}</div>` : ''}<h3>${esc(g.model)}</h3>
     <div class="meta">${g.model_number ? `<span>Model No. <b>${esc(g.model_number)}</b></span>` : ''}<span class="badge ${cls}">${type}</span>${g.boxes.length > 1 ? `<span>in ${g.boxes.length} boxes</span>` : ''}</div>
     ${!compact && poster.length ? `<div class="note">Box card: ${esc(poster.join(', '))}</div>` : ''}
     ${warn.length ? `<div class="warnline">⚠ Unverified entry — ${esc(warn[0])}. Please double-check the box.</div>` : ''}
@@ -230,7 +252,10 @@ function renderResults(d) {
     if (d.others.length) html += `<details class="more"><summary>Show ${d.others.length} similar model${d.others.length === 1 ? '' : 's'}</summary>${d.others.map((g) => groupCard(g, { compact: true })).join('')}</details>`;
   } else {
     const brandOnly = d.others.every((g) => g.tier === 0);
-    html += brandOnly
+    const typo = d.others.every((g) => g.tier === 5);
+    html += typo
+      ? `<div class="sect">Did you mean…?</div><div class="banner warn">Nothing matches “${esc(d.query)}” exactly. These models have a <b>similar spelling</b> — confirm the model before taking a box.</div>`
+      : brandOnly
       ? `<div class="sect">All ${esc(d.others[0].brand)} models</div><div class="banner info">Add the model name to narrow this down${d.truncated ? ' — showing the first results only' : ''}.</div>`
       : `<div class="sect">No exact match — possible matches</div><div class="banner warn">Nothing matches “${esc(d.query)}” exactly. These are <b>possible</b> matches — please check each one.</div>`;
     html += d.others.map((g) => groupCard(g, { compact: true })).join('');
