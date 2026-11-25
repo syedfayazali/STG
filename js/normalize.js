@@ -16,11 +16,14 @@ const ALIASES = [
   [/(?<![a-z0-9])1\s*\+\s*/g, 'oneplus '],
   [/\br\s*-\s*me\b/g, 'realme'],
   [/\brlme\b|\brme\b|\bre\b/g, 'realme'],
-  [/\bsam\s*sung\b|\bsasung\b|\bsam\b/g, 'samsung'],
+  [/\bsam\s*sung\b|\bsasung\b|\bsansung\b|\bsamsang\b|\bsamsumg\b|\bsam\b/g, 'samsung'],
+  [/\bhoner\b/g, 'honor'],
+  [/\bnpthing\b|\bnothng\b/g, 'nothing'],
+  [/\bvvo\b/g, 'vivo'],
   [/\bi\s*q\s*[o0]{2}/g, 'iqoo'],
   [/\btechno\b/g, 'tecno'],
   [/\bmotorola\b/g, 'moto'],
-  [/\biphones?\b/g, 'apple'],
+  [/\bi\s*phones?\b/g, 'apple'],
   [/\brmi\b|\brm\b/g, 'redmi'],
   [/\binfi\b|\binf\b/g, 'infinix'],
   [/\bhw\b/g, 'huawei'],
@@ -28,6 +31,8 @@ const ALIASES = [
   [/\bop\b/g, 'oppo'],
   [/\bhon\b/g, 'honor'],
   [/\btcn\b/g, 'tecno'],
+  [/\bonel\s*plus\b/g, 'oneplus'],
+  [/\bgooogle\b/g, 'google'],
 ];
 
 export const BRAND_NAMES = {
@@ -37,12 +42,15 @@ export const BRAND_NAMES = {
   itel: 'Itel', apple: 'Apple', xiaomi: 'Xiaomi', nokia: 'Nokia', google: 'Google',
   lava: 'Lava', asus: 'Asus', sony: 'Sony',
 };
+// Column headings that name a brand in other ways ("REDMI/MI", "I PHONE", "NOTHING/ CMF", "GOOGLE PIXEL").
+export const HEADER_BRANDS = { redmimi: 'Redmi', googlepixel: 'Google', pixel: 'Google', nothingcmf: 'Nothing', cmf: 'Nothing', nothingcmfphone: 'Nothing' };
 
 /** Normalised word list for any text. */
 export function words(str) {
   let s = String(str ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '');
   s = s.replace(/[Α-ω]/g, (c) => GREEK[c] ?? c).toLowerCase();
   for (const [re, rep] of ALIASES) s = s.replace(re, rep);
+  s = s.replace(/(?<=[a-z0-9])\s*\+/g, ' plus '); // "PRO+" and "PRO PLUS" are the same phone
   return s.replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((w) => w && !FILLER.has(w));
 }
 
@@ -69,7 +77,7 @@ export function recordKeys(r) {
   const model_key = key(r.model);
   const number_key = key(r.model_number);
   // poster_model is the box's label, not part of the phone's identity, so it is kept out of search (avoids cross-brand false hits)
-  const extraVals = r.extra && typeof r.extra === 'object' ? Object.entries(r.extra).filter(([k]) => k !== 'poster_model').map(([, v]) => v).join(' ') : '';
+  const extraVals = r.extra && typeof r.extra === 'object' ? Object.entries(r.extra).filter(([k]) => k !== 'poster_model' && k !== 'box_code').map(([, v]) => v).join(' ') : '';
   const other = [key([r.variant, r.ram, r.storage, r.color].join(' ')), key(r.imei), key(extraVals)];
   return {
     brand_key,

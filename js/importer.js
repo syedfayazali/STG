@@ -1,5 +1,5 @@
 // Browser-side Excel import: parsing, cleaning and validation. Pure functions + SheetJS (global XLSX).
-import { key, boxKey as hkey, words, clean, canonBrand, isBrandWord, recordKeys, dupKey, BRAND_NAMES } from './normalize.js';
+import { key, boxKey as hkey, words, clean, canonBrand, isBrandWord, recordKeys, dupKey, BRAND_NAMES, HEADER_BRANDS } from './normalize.js';
 
 export const TEMPLATE_HEADERS = ['Brand', 'Model', 'Model Number', 'Box Number', 'Variant', 'RAM', 'Storage', 'Color', 'Quantity', 'Notes'];
 export const FIELDS = ['brand', 'model', 'model_number', 'box_number', 'variant', 'ram', 'storage', 'color', 'imei', 'quantity', 'notes'];
@@ -8,7 +8,7 @@ const SYNONYMS = {
   brand: ['brand', 'make', 'company', 'manufacturer'],
   model: ['model', 'modelname', 'name', 'product', 'phone', 'mobile', 'item'],
   model_number: ['modelnumber', 'modelno', 'modelnum', 'mn', 'sku', 'partno', 'code', 'modelcode'],
-  box_number: ['boxnumber', 'boxno', 'box', 'cbno', 'cb', 'location', 'bin', 'boxnum'],
+  box_number: ['boxnumber', 'boxno', 'box', 'cbno', 'cb', 'shno', 'slno', 'srno', 'sno', 'location', 'bin', 'boxnum'],
   variant: ['variant', 'version'], ram: ['ram', 'memory'], storage: ['storage', 'rom'], color: ['color', 'colour'],
   imei: ['imei'], quantity: ['quantity', 'qty', 'units', 'stock', 'count'], notes: ['notes', 'note', 'remarks', 'comment', 'comments'],
 };
@@ -30,7 +30,7 @@ export function readWorkbook(arrayBuffer) {
 export function detectMode(headers) {
   const hk = headers.map((h) => hkey(h));
   const hasBox = hk.some((h) => SYNONYMS.box_number.includes(h));
-  const brandCols = headers.filter((h) => BRAND_NAMES[key(h)]);
+  const brandCols = headers.filter((h) => BRAND_NAMES[key(h)] || HEADER_BRANDS[key(h)]);
   const hasModel = hk.some((h) => SYNONYMS.model.includes(h));
   return hasBox && brandCols.length >= 4 && !hk.includes('brand') ? 'chart' : hasModel || hk.includes('brand') ? 'flat' : brandCols.length >= 4 ? 'chart' : 'flat';
 }
@@ -48,8 +48,9 @@ export function suggestChart(headers) {
   const hk = headers.map((h) => hkey(h));
   const box = headers[hk.findIndex((h) => SYNONYMS.box_number.includes(h))] || headers[0];
   const label = headers.find((h, i) => ['postermodel', 'poster', 'label', 'title'].includes(hk[i])) || '';
-  const brandColumns = headers.filter((h) => h !== box && h !== label && BRAND_NAMES[key(h)]).map((h) => ({ column: h, brand: canonBrand(h) }));
-  return { boxColumn: box, labelColumn: label, brandColumns };
+  const codeColumn = headers.find((h, i) => hk[i] === 'code') || '';
+  const brandColumns = headers.filter((h) => h !== box && h !== label && h !== codeColumn && (BRAND_NAMES[key(h)] || HEADER_BRANDS[key(h)])).map((h) => ({ column: h, brand: HEADER_BRANDS[key(h)] || canonBrand(h) }));
+  return { boxColumn: box, labelColumn: label, codeColumn, brandColumns };
 }
 
 // ---------- compatibility-chart cell parsing ----------
@@ -57,16 +58,36 @@ const GEN = /^[2-6]g$/;
 // Brands whose chart cells list bare numbers after a family name ("SPARK 4/7/8/8C"): the number inherits the family.
 const FAMILY_BRANDS = new Set(['tecno', 'infinix', 'itel']);
 const FAMILIES = new Set(['spark', 'camon', 'hot', 'smart', 'pop', 'note', 'zero', 'pova', 'phantom']);
+const MODS = new Set(['pro', 'lite', 'plus', 'max', 'ultra', 'gaming', 'edition', 'power', 'prime', 'play', 'neo', 'fe', 'china', 'india', 'zoom']);
+const CODELIKE = /^[a-z]{1,2}\d+[a-z]{0,3}(?:[45]g)?$/;
+/** Break one run of words into separate models when it clearly holds several ("G10 G10 POWER", "A16 A16S A17"). */
+function splitModels(seg) {
+  const out = []; let cur = [];
+  for (const w of seg) {
+    const prev = cur[cur.length - 1];
+    const stem = (x) => x.replace(/\d.*$/, '');
+    const repeated = !COMMON.has(w) && !GEN.test(w) && ((cur.includes(w) && (/\d/.test(w) || w.length >= 4 || FAMILY_PREFIX.has(w))) || (FAMILY_PREFIX.has(stem(w)) && stem(w).length >= 3 && cur.some((x) => stem(x) === stem(w))));
+    const adjacentCodes = prev && CODELIKE.test(w) && (CODELIKE.test(prev) || MODS.has(prev) || GEN.test(prev) || /^20\d\d$/.test(prev)) && cur.length >= 1 && !(cur.length === 1 && FAMILY_PREFIX.has(prev));
+    if (cur.length && (repeated || adjacentCodes)) { out.push(cur); cur = []; }
+    cur.push(w);
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+const FAMILY_PREFIX = new Set(['note', 'spark', 'camon', 'hot', 'smart', 'pop', 'zero', 'pova', 'phantom', 'reno', 'narzo', 'nord', 'edge', 'moto', 'galaxy']);
 const pretty = (m) => m.replace(/PROMAX/g, 'PRO MAX').replace(/([A-Z]{3,})(\d)/g, '$1 $2').replace(/(\d)(PRO|MAX|LITE|PLUS|ULTRA|NEO)\b/g, '$1 $2').replace(/\s+/g, ' ').trim();
 
 /** Split one chart cell ("A1/A2(4G/5G)/REDMI NOTE 9") into clean model strings for a brand. */
 export function parseChartCell(cell, brandName) {
   const brandKey = key(brandName);
-  const text = String(cell ?? '');
+  let text = String(cell ?? '');
   if (!clean(text)) return [];
+  // "UV VIVO V50" boxes hold UV glass: strip the prefix and tag every model in the cell
+  const uv = /^\s*uv\b/i.test(text);
+  if (uv) text = text.replace(/^\s*uv\b[\s\-:]*/i, '');
   // protect slashes inside parentheses
   const protectedText = text.replace(/\(([^()]*)\)/g, (_, inner) => `(${inner.replace(/\//g, '¦')})`);
-  const pieces = protectedText.split(/[\/\n\r]+/);
+  const pieces = protectedText.split(/[\/\n\r,;]+/);
 
   // expand "(4G/5G)" groups
   const expanded = [];
@@ -114,16 +135,16 @@ export function parseChartCell(cell, brandName) {
         else if (family && /^\d/.test(seg[0]) && !GEN.test(seg[0])) { seg = [family, ...seg]; inferred = family.toUpperCase(); }
         else if (!/^\d/.test(seg[0])) family = null;
       }
-      results.push({ brand, model: pretty(seg.join(' ').toUpperCase()), inferred });
+      for (const part of splitModels(seg)) results.push({ brand, model: pretty(part.join(' ').toUpperCase()), inferred, glass: uv ? 'UV' : '' });
     }
   }
   return results;
 }
 
-const COMMON = new Set(['pro', 'plus', 'lite', 'max', 'ultra', 'neo', 'gt', 'prime', 'power', 'play', 'core', 'edition', 'china', 'india']);
+var COMMON = new Set(['pro', 'plus', 'lite', 'max', 'ultra', 'neo', 'gt', 'prime', 'power', 'play', 'core', 'edition', 'china', 'india']);
 function reviewReason(model) {
   const ws = model.toLowerCase().split(' ');
-  if (model.length > 32 || ws.length >= 5) return 'Long entry - may be several models joined without a "/"';
+  if (model.length > 34 || ws.length >= 6) return 'Long entry - may be several models joined without a "/"';
   const seen = new Set();
   const full = new Set();
   for (const w of ws) {
@@ -156,10 +177,18 @@ export function analyze(sheet, cfg, existing) {
     sheet.rows.forEach((r, i) => {
       const rowNo = i + 2, box = clean(r[bi]);
       const label = c.labelColumn && idx[c.labelColumn] != null ? clean(r[idx[c.labelColumn]]) : '';
+      const code = c.codeColumn && idx[c.codeColumn] != null ? clean(r[idx[c.codeColumn]]) : '';
       if (!box) { if (cols.some((b) => clean(r[idx[b.column]]))) err(rowNo, 'Missing box number', { label }); return; }
+      const before = cand.length;
       for (const b of cols) for (const m of parseChartCell(r[idx[b.column]], canonBrand(b.brand))) {
-        cand.push({ row: rowNo, rec: { brand: m.brand, model: m.model, model_number: '', box_number: box, variant: '', ram: '', storage: '', color: '', imei: '', quantity: null,
-          notes: m.inferred ? `Model family "${m.inferred}" inferred from the entry before it in the chart` : '', extra: label ? { poster_model: label } : {}, review_reason: reviewReason(m.model) } });
+        cand.push({ row: rowNo, rec: { brand: m.brand, model: m.model, model_number: '', box_number: box, variant: m.glass || '', ram: '', storage: '', color: '', imei: '', quantity: null,
+          notes: m.inferred ? `Model family "${m.inferred}" inferred from the entry before it in the chart` : '', extra: { ...(label ? { poster_model: label } : {}), ...(code ? { box_code: code } : {}) }, review_reason: reviewReason(m.model) } });
+      }
+      // A box with a label but no compatibility list still holds that model: take it from the label.
+      if (cand.length === before && label) {
+        const lw = words(label), lb = lw.length > 1 && isBrandWord(lw[0]) ? canonBrand(lw[0]) : '';
+        if (lb) for (const m of parseChartCell(label, lb)) cand.push({ row: rowNo, rec: { brand: m.brand, model: m.model, model_number: '', box_number: box, variant: m.glass || '', ram: '', storage: '', color: '', imei: '', quantity: null,
+          notes: 'Taken from the box label (this box has no compatibility list)', extra: { ...(label ? { poster_model: label } : {}), ...(code ? { box_code: code } : {}) }, review_reason: '' } });
       }
     });
   } else {

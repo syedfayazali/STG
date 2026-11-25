@@ -212,21 +212,22 @@ async function runSearch(raw) {
   const browse = $('#browse');
   if (!q) { res.innerHTML = ''; if (browse) browse.hidden = false; return; }
   if (browse) browse.hidden = true;
-  const ws = words(q), qk = ws.join(''), my = ++searchSeq, MAX = 600;
-  if (!qk) { res.innerHTML = renderResults({ exact: [], others: [], query: q }); return; }
-  const { data, error } = await sb.rpc('search_inventory', { qk, ws, max_rows: MAX });
+  const all = words(q), uv = all.includes('uv'), ws = all.filter((w) => w !== 'uv'), qk = ws.join(''), my = ++searchSeq, MAX = 600;
+  if (!qk && !uv) { res.innerHTML = renderResults({ exact: [], others: [], query: q }); return; }
+  const { data, error } = await sb.rpc('search_inventory', { qk, ws, max_rows: MAX, gt: uv ? 'uv' : '' });
   if (my !== searchSeq) return;
   if (error) { res.innerHTML = `<div class="banner warn">Search is unavailable right now (${esc(error.message)}). Please try again.</div>`; return; }
   const g = groupRows(data || []);
-  res.innerHTML = renderResults({ ...g, query: q, truncated: (data || []).length >= MAX });
+  res.innerHTML = renderResults({ ...g, query: q, uv, truncated: (data || []).length >= MAX });
   $$('[data-copy]', res).forEach((b) => (b.onclick = () => copyText(b.dataset.copy)));
   const add = $('#nr-add'); if (add) add.onclick = () => { sessionStorage.setItem('addq', q); location.hash = state.isAdmin ? '#/admin/inventory?add=1' : '#/login'; };
   const imp = $('#nr-imp'); if (imp) imp.onclick = () => { location.hash = state.isAdmin ? '#/admin/import' : '#/login'; };
 }
 
 function boxBlock(b) {
-  const bits = [b.quantity != null ? `${b.quantity} unit${b.quantity === 1 ? '' : 's'}` : '', [b.variant, b.ram, b.storage, b.color].filter(Boolean).join(' · ')].filter(Boolean).join(' — ');
-  return `<div class="boxblock"><div class="lbl">BOX NUMBER</div><div class="num"><span>${esc(b.box_number)}</span><button class="copy" data-copy="${esc(b.box_number)}" aria-label="Copy box number ${esc(b.box_number)}">Copy</button></div>${bits ? `<div class="sub">${esc(bits)}</div>` : ''}</div>`;
+  const isUv = String(b.variant).toLowerCase() === 'uv';
+  const bits = [b.quantity != null ? `${b.quantity} unit${b.quantity === 1 ? '' : 's'}` : '', [isUv ? '' : b.variant, b.ram, b.storage, b.color].filter(Boolean).join(' · ')].filter(Boolean).join(' — ');
+  return `<div class="boxblock ${isUv ? 'uv' : ''}"><div class="lbl">BOX NUMBER${isUv ? '<i class="uvtag">UV GLASS</i>' : ''}</div><div class="num"><span>${esc(b.box_number)}</span><button class="copy" data-copy="${esc(b.box_number)}" aria-label="Copy box number ${esc(b.box_number)}">Copy</button></div>${bits ? `<div class="sub">${esc(bits)}</div>` : ''}${b.box_code ? `<div class="code">Code ${esc(b.box_code)}</div>` : ''}</div>`;
 }
 function groupCard(g, { exact, compact }) {
   const [type, cls] = TIER[g.tier];
@@ -234,7 +235,7 @@ function groupCard(g, { exact, compact }) {
   const notes = [...new Set(g.boxes.map((b) => b.notes).filter(Boolean))];
   const poster = [...new Set(g.boxes.map((b) => b.poster_model).filter(Boolean))];
   return `<article class="glass card ${exact ? 'exact' : ''} ${compact ? 'compact' : ''}"><div>
-    ${g.brand ? `<div class="brandline">${brandMark(g.brand, 'sm')}${esc(g.brand)}</div>` : ''}<h3>${esc(g.model)}</h3>
+    ${g.brand ? `<div class="brandline">${brandMark(g.brand, 'sm')}${esc(g.brand)}</div>` : ''}<h3>${esc(g.brand === 'Apple' && /^\d/.test(g.model) ? 'iPhone ' + g.model : g.model)}</h3>
     <div class="meta">${g.model_number ? `<span>Model No. <b>${esc(g.model_number)}</b></span>` : ''}<span class="badge ${cls}">${type}</span>${g.boxes.length > 1 ? `<span>in ${g.boxes.length} boxes</span>` : ''}</div>
     ${!compact && poster.length ? `<div class="note">Box card: ${esc(poster.join(', '))}</div>` : ''}
     ${warn.length ? `<div class="warnline">⚠ Unverified entry — ${esc(warn[0])}. Please double-check the box.</div>` : ''}
@@ -254,11 +255,14 @@ function renderResults(d) {
     if (d.others.length) html += `<details class="more"><summary>Show ${d.others.length} similar model${d.others.length === 1 ? '' : 's'}</summary>${d.others.map((g) => groupCard(g, { compact: true })).join('')}</details>`;
   } else {
     const brandOnly = d.others.every((g) => g.tier === 0);
+    const uvAll = d.uv && !d.exact.length && brandOnly && d.others.every((g) => g.tier === 0) && !String(d.query).replace(/uv/gi, '').trim();
     const typo = d.others.every((g) => g.tier === 5);
-    html += typo
+    html += uvAll
+      ? `<div class="sect">All UV glass</div><div class="banner info">Add the phone name (for example “UV vivo v50”) to narrow this down${d.truncated ? ' — showing the first results only' : ''}.</div>`
+      : typo
       ? `<div class="sect">Did you mean…?</div><div class="banner warn">Nothing matches “${esc(d.query)}” exactly. These models have a <b>similar spelling</b> — confirm the model before taking a box.</div>`
       : brandOnly
-      ? `<div class="sect">All ${esc(d.others[0].brand)} models</div><div class="banner info">Add the model name to narrow this down${d.truncated ? ' — showing the first results only' : ''}.</div>`
+      ? `<div class="sect">All ${d.uv ? "UV " : ""}${esc(d.others[0].brand)} models</div><div class="banner info">Add the model name to narrow this down${d.truncated ? ' — showing the first results only' : ''}.</div>`
       : `<div class="sect">No exact match — possible matches</div><div class="banner warn">Nothing matches “${esc(d.query)}” exactly. These are <b>possible</b> matches — please check each one.</div>`;
     html += d.others.map((g) => groupCard(g, { compact: true })).join('');
   }
@@ -524,8 +528,9 @@ function wizard(sheets, filename) {
         $('#cfg').innerHTML = `<p class="muted">Each row is one box. Every brand column lists the models that belong in that box, separated by “/”. They are split into one searchable record per model.</p>
         <div class="maprow"><span>Box number column *</span><select id="c-box">${opts(chart.boxColumn)}</select></div>
         <div class="maprow"><span>Box label column</span><select id="c-label">${opts(chart.labelColumn, true)}</select></div>
+        <div class="maprow"><span>Box code column</span><select id="c-code">${opts(chart.codeColumn, true)}</select></div>
         <div style="margin-top:10px"><b style="font-size:14px">Brand columns</b></div>
-        ${s.headers.filter((h) => h !== chart.boxColumn && h !== chart.labelColumn).map((h) => { const b = chart.brandColumns.find((x) => x.column === h); return `<div class="maprow" style="grid-template-columns:26px 140px 1fr"><input type="checkbox" class="bc" data-col="${esc(h)}" ${b ? 'checked' : ''}><span>${esc(h)}</span><input class="bn" value="${esc(b?.brand || h)}" aria-label="Brand name for ${esc(h)}"></div>`; }).join('')}`;
+        ${s.headers.filter((h) => h !== chart.boxColumn && h !== chart.labelColumn && h !== chart.codeColumn).map((h) => { const b = chart.brandColumns.find((x) => x.column === h); return `<div class="maprow" style="grid-template-columns:26px 140px 1fr"><input type="checkbox" class="bc" data-col="${esc(h)}" ${b ? 'checked' : ''}><span>${esc(h)}</span><input class="bn" value="${esc(b?.brand || h)}" aria-label="Brand name for ${esc(h)}"></div>`; }).join('')}`;
       }
     };
     drawCfg(); $('#mode').onchange = drawCfg;
@@ -533,7 +538,7 @@ function wizard(sheets, filename) {
     const config = () => {
       const mode = $('#mode').value, cfg = { mode, skipExisting: $('#skip').checked };
       if (mode === 'flat') { cfg.flat = { mapping: {}, keepExtra: $('#keepx').checked }; $$('[data-f]').forEach((x) => { if (x.value) cfg.flat.mapping[x.dataset.f] = x.value; }); }
-      else cfg.chart = { boxColumn: $('#c-box').value, labelColumn: $('#c-label').value, brandColumns: $$('.bc').filter((c) => c.checked).map((c) => ({ column: c.dataset.col, brand: c.closest('.maprow').querySelector('.bn').value })) };
+      else cfg.chart = { boxColumn: $('#c-box').value, labelColumn: $('#c-label').value, codeColumn: $('#c-code') ? $('#c-code').value : '', brandColumns: $$('.bc').filter((c) => c.checked).map((c) => ({ column: c.dataset.col, brand: c.closest('.maprow').querySelector('.bn').value })) };
       return cfg;
     };
     $('#prev').onclick = async () => {
