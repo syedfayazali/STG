@@ -37,7 +37,7 @@ async function audit(action, recordId = null, detail = '') {
 const labelOf = (r) => [r.brand, r.model, r.model_number && `(${r.model_number})`].filter(Boolean).join(' ') + ` in ${r.box_number}`;
 
 const ICON_SEARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
-const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9dc3f5"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="#16223f"/><rect x="19" y="9" width="26" height="46" rx="6" fill="none" stroke="url(#lg)" stroke-width="3.5"/><path d="M26 12 L38 12 L24 52 L19 52 Z" fill="#fff" opacity=".22"/><circle cx="32" cy="48" r="2.4" fill="url(#lg)"/></svg>`;
+const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f0c24b"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="#16223f"/><rect x="19" y="9" width="26" height="46" rx="6" fill="none" stroke="url(#lg)" stroke-width="3.5"/><path d="M26 12 L38 12 L24 52 L19 52 Z" fill="#fff" opacity=".22"/><circle cx="32" cy="48" r="2.4" fill="url(#lg)"/></svg>`;
 
 // ------------------------------------------------------------------ auth + routing
 let adminCheck = null;
@@ -155,7 +155,8 @@ function viewHome() {
     <p class="lead">Type a brand, model or model number. Get the box it lives in — instantly.</p>
     <form class="searchbar glass" id="sf" role="search"><label class="field">${ICON_SEARCH}<input id="q" type="search" placeholder="Search mobile model, brand or model number…" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" aria-label="Search mobile model, brand or model number" value="${esc(lastQuery)}"></label>
     <button class="btn primary big">Search Inventory</button></form>
-    <div class="chips" id="quick"></div></section>
+    <div class="chips" id="quick"></div>
+    <div class="wholesale"><span class="tag">Box wise data</span><span class="tag red">For wholesalers only</span><a class="callbtn" href="tel:+917981710834" aria-label="Call 7981710834">&#9742; 7981710834</a></div></section>
   <div class="results" id="res" aria-live="polite"></div>
   <div id="browse">
     <section class="section"><h2>Browse by brand</h2><p class="sub">Tap a brand to see everything listed for it.</p><div class="brandgrid" id="brands"><div class="spin">Loading…</div></div></section>
@@ -164,7 +165,7 @@ function viewHome() {
       <div class="glass step"><div class="n">2</div><h3>Read the box number</h3><p>Exact matches show first, big and clear. Same phone in several boxes? Every box is listed.</p></div>
       <div class="glass step"><div class="n">3</div><h3>Pick the glass</h3><p>Nothing is guessed — if there's no verified match, we say so.</p></div></div></section>
   </div></main>
-  <footer class="site">© ${new Date().getFullYear()} Smart Tempered Glass · <a href="#/login">Admin</a></footer>`;
+  <footer class="site">© ${new Date().getFullYear()} Smart Tempered Glass · <a href="#/login">Admin</a><span class="contact">Box wise data · For wholesalers only · <a href="tel:+917981710834">7981710834</a></span></footer>`;
   bindNav();
   const q = $('#q'); let t;
   q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => runSearch(q.value), 230); });
