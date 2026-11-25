@@ -240,3 +240,5 @@ footer.site .contact { display: block; margin-top: 6px; color: var(--accent); fo
 footer.site .credit { display: block; margin-top: 8px; font-size: 13px; color: var(--faint); }
 footer.site .credit a { color: var(--accent); font-weight: 700; text-decoration: none; }
 footer.site .credit a:hover { text-decoration: underline; }
+footer.site .credit { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+footer.site .credit .hl img { display: block; width: 56px; height: 56px; border-radius: 12px; border: 1px solid var(--line, rgba(255,255,255,.15)); }

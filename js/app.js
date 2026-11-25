@@ -167,7 +167,7 @@ function viewHome() {
       <div class="glass step"><div class="n">2</div><h3>Read the box number</h3><p>Exact matches show first, big and clear. Same phone in several boxes? Every box is listed.</p></div>
       <div class="glass step"><div class="n">3</div><h3>Pick the glass</h3><p>Nothing is guessed — if there's no verified match, we say so.</p></div></div></section>
   </div></main>
-  <footer class="site">© ${new Date().getFullYear()} Smart Tempered Glass · <a href="#/login">Admin</a><span class="contact">Box wise data · For wholesalers only · <a href="tel:+917981710834">7981710834</a></span><span class="credit">Website designed and managed by <a href="https://www.linkedin.com/company/hayylogics/" target="_blank" rel="noopener noreferrer">HAYY LOGIC IT SOLUTIONS</a></span></footer>`;
+  <footer class="site">© ${new Date().getFullYear()} Smart Tempered Glass · <a href="#/login">Admin</a><span class="contact">Box wise data · For wholesalers only · <a href="tel:+917981710834">7981710834</a></span><span class="credit"><a class="hl" href="https://www.linkedin.com/company/hayylogics/" target="_blank" rel="noopener noreferrer" aria-label="HAYY LOGIC IT SOLUTIONS on LinkedIn"><img src="assets/hayylogic.png" alt="HAYY LOGIC" width="56" height="56"></a><span>Website designed and managed by <a href="https://www.linkedin.com/company/hayylogics/" target="_blank" rel="noopener noreferrer">HAYY LOGIC IT SOLUTIONS</a></span></span></footer>`;
   bindNav();
   const q = $('#q'); let t;
   q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => runSearch(q.value), 230); });
