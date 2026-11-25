@@ -130,8 +130,6 @@ input[type=checkbox] { accent-color: #fff; width: 17px; height: 17px; padding: 0
 .boxblock .num { display: flex; align-items: center; gap: 12px; font-size: 46px; font-weight: 850; line-height: 1.05; letter-spacing: -.03em; word-break: break-all; }
 .card.exact .boxblock .num { font-size: 58px; }
 .boxblock .sub { font-size: 13px; color: #44526b; margin-top: 2px; }
-.copy { background: #0a0809; border: 0; color: #fff; border-radius: 10px; padding: 7px 12px; cursor: pointer; font-size: 13px; font-weight: 750; letter-spacing: 0; transition: background .2s, transform .2s; }
-.copy:hover { background: #26395f; transform: translateY(-1px); }
 .card.compact { padding: 14px 18px; margin: 10px 0; }
 .card.compact h3 { font-size: 19px; margin-bottom: 3px; }
 .card.compact .boxblock { min-width: 98px; padding: 7px 11px; border-radius: 14px; }
@@ -234,3 +232,7 @@ footer.site .contact { display: block; margin-top: 6px; color: var(--accent); fo
 .uvtag { font-style: normal; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; letter-spacing: .12em; font-weight: 800; color: #fff; background: linear-gradient(135deg, #7c3aed, #4f46e5); vertical-align: 1px; }
 .boxblock.uv { box-shadow: 0 0 0 2px rgba(124,58,237,.55), 0 10px 26px rgba(0,0,0,.35); }
 .boxblock .code { margin-top: 4px; font-size: 11.5px; color: #5a6b88; font-weight: 650; }
+
+.crow { display: grid; grid-template-columns: 1fr 110px auto auto; gap: 10px; align-items: center; padding: 10px 14px; margin-bottom: 8px; }
+.crow .cbox { min-width: 0; }
+@media (max-width: 640px) { .crow { grid-template-columns: 1fr 1fr; } .crow > div:first-child { grid-column: 1 / -1; } }

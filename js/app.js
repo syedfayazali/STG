@@ -218,8 +218,9 @@ async function runSearch(raw) {
   if (my !== searchSeq) return;
   if (error) { res.innerHTML = `<div class="banner warn">Search is unavailable right now (${esc(error.message)}). Please try again.</div>`; return; }
   const g = groupRows(data || []);
-  res.innerHTML = renderResults({ ...g, query: q, uv, truncated: (data || []).length >= MAX });
-  $$('[data-copy]', res).forEach((b) => (b.onclick = () => copyText(b.dataset.copy)));
+  let hint = [];
+  if (!g.exact.length && qk && !uv) { const h = await sb.rpc('catalogue_hint', { qk }); if (my !== searchSeq) return; hint = h.data || []; }
+  res.innerHTML = renderResults({ ...g, query: q, uv, hint, truncated: (data || []).length >= MAX });
   const add = $('#nr-add'); if (add) add.onclick = () => { sessionStorage.setItem('addq', q); location.hash = state.isAdmin ? '#/admin/inventory?add=1' : '#/login'; };
   const imp = $('#nr-imp'); if (imp) imp.onclick = () => { location.hash = state.isAdmin ? '#/admin/import' : '#/login'; };
 }
@@ -227,7 +228,7 @@ async function runSearch(raw) {
 function boxBlock(b) {
   const isUv = String(b.variant).toLowerCase() === 'uv';
   const bits = [b.quantity != null ? `${b.quantity} unit${b.quantity === 1 ? '' : 's'}` : '', [isUv ? '' : b.variant, b.ram, b.storage, b.color].filter(Boolean).join(' · ')].filter(Boolean).join(' — ');
-  return `<div class="boxblock ${isUv ? 'uv' : ''}"><div class="lbl">BOX NUMBER${isUv ? '<i class="uvtag">UV GLASS</i>' : ''}</div><div class="num"><span>${esc(b.box_number)}</span><button class="copy" data-copy="${esc(b.box_number)}" aria-label="Copy box number ${esc(b.box_number)}">Copy</button></div>${bits ? `<div class="sub">${esc(bits)}</div>` : ''}${b.box_code ? `<div class="code">Code ${esc(b.box_code)}</div>` : ''}</div>`;
+  return `<div class="boxblock ${isUv ? 'uv' : ''}"><div class="lbl">BOX NUMBER${isUv ? '<i class="uvtag">UV GLASS</i>' : ''}</div><div class="num"><span>${esc(b.box_number)}</span></div>${bits ? `<div class="sub">${esc(bits)}</div>` : ''}${b.box_code ? `<div class="code">Code ${esc(b.box_code)}</div>` : ''}</div>`;
 }
 function groupCard(g, { exact, compact }) {
   const [type, cls] = TIER[g.tier];
@@ -244,7 +245,8 @@ function groupCard(g, { exact, compact }) {
 }
 function renderResults(d) {
   if (!d.exact.length && !d.others.length) {
-    return `<div class="glass empty"><h2>No matching mobile found.</h2><p>No verified match was found for “${esc(d.query)}”. Check the spelling or try fewer words. A box number is only ever shown when it comes from the inventory.</p>
+    const known = (d.hint || []).length ? `<div class="banner info"><b>Known phone, no box assigned yet:</b> ${d.hint.map((h) => esc(h.brand + ' ' + h.model)).join(' · ')}. It is not in any box in the inventory, so there is no box number to show.${state.isAdmin ? ' <a href="#/admin/catalogue">Assign a box</a>' : ''}</div>` : '';
+    return `${known}<div class="glass empty"><h2>No matching mobile found.</h2><p>No verified match was found for “${esc(d.query)}”. Check the spelling or try fewer words. A box number is only ever shown when it comes from the inventory.</p>
     <div class="row"><button class="btn primary" id="nr-add">Add New Model</button><button class="btn" id="nr-imp">Import Excel</button></div></div>`;
   }
   let html = '';
@@ -271,13 +273,13 @@ function renderResults(d) {
 }
 
 // ------------------------------------------------------------------ admin shell
-const TABS = [['dashboard', 'Dashboard'], ['inventory', 'Inventory'], ['import', 'Import / Export'], ['duplicates', 'Duplicates'], ['audit', 'Audit log'], ['account', 'Account']];
+const TABS = [['dashboard', 'Dashboard'], ['inventory', 'Inventory'], ['import', 'Import / Export'], ['catalogue', 'Catalogue'], ['duplicates', 'Duplicates'], ['audit', 'Audit log'], ['account', 'Account']];
 async function viewAdmin(tab) {
   app.innerHTML = `${nav('admin')}<div class="wrap wide"><div class="subnav">${TABS.map(([k, l]) => `<a href="#/admin/${k}" class="${k === tab ? 'on' : ''}">${l}</a>`).join('')}</div><div class="page" id="page"><div class="spin">Loading…</div></div></div>`;
   bindNav();
   const page = $('#page');
   try {
-    const views = { dashboard: viewDashboard, inventory: viewInventory, import: viewImport, duplicates: viewDuplicates, audit: viewAudit, account: viewAccount };
+    const views = { dashboard: viewDashboard, inventory: viewInventory, import: viewImport, catalogue: viewCatalogue, duplicates: viewDuplicates, audit: viewAudit, account: viewAccount };
     if (!views[tab]) page.innerHTML = '<p>Page not found.</p>'; else await views[tab](page);
   } catch (e) { page.innerHTML = `<div class="banner warn">${esc(friendly(e))}</div>`; }
 }
@@ -457,6 +459,38 @@ function editDialog(rec, onSaved, prefillModel = '') {
 }
 
 // ------------------------------------------------------------------ duplicates / audit / account
+async function viewCatalogue(page) {
+  const [un, bx] = await Promise.all([sb.rpc('catalogue_unassigned'), sb.rpc('box_list')]);
+  const all = must(un), boxes = must(bx);
+  const brands = [...new Set(all.map((r) => r.brand))];
+  page.innerHTML = `<h2>Catalogue — phones without a box</h2>
+  <p class="muted">Phone models that exist in the market but are not in any box yet. Pick the box the glass for that phone is kept in and press <b>Add</b>. Nothing is assigned until you do it.</p>
+  <div class="toolbar"><select id="cb"><option value="">All brands (${fmt(all.length)})</option>${brands.map((b) => `<option>${esc(b)}</option>`).join('')}</select><input id="cq" type="search" placeholder="Search models…" style="flex:1;min-width:160px"></div>
+  <datalist id="boxlist">${boxes.map((b) => `<option value="${esc(b)}">`).join('')}</datalist><div id="cl"></div>`;
+  let list = all;
+  const draw = () => {
+    const bq = $('#cb').value, qk = key($('#cq').value);
+    const f = list.filter((r) => (!bq || r.brand === bq) && (!qk || (r.brand_key + r.model_key).includes(qk)));
+    $('#cl').innerHTML = (f.length ? f.slice(0, 80).map((r) => `<div class="glass crow" data-id="${r.id}"><div><b>${esc(r.brand)}</b> ${esc(r.brand === 'Apple' && /^\d/.test(r.model) ? 'iPhone ' + r.model : r.model)}${r.year ? ` <span class="muted">${r.year}</span>` : ''}</div>
+      <input class="cbox" list="boxlist" placeholder="Box no." inputmode="text" aria-label="Box number for ${esc(r.brand + ' ' + r.model)}"><label class="chip chk"><input type="checkbox" class="cuv"> UV</label><button class="btn primary sm cadd">Add</button></div>`).join('') : '<p class="muted">Nothing to show.</p>')
+      + (f.length > 80 ? `<p class="muted">Showing the first 80 of ${fmt(f.length)} — filter by brand or search to narrow down.</p>` : '');
+    $$('.cadd', $('#cl')).forEach((btn) => (btn.onclick = async () => {
+      const row = btn.closest('.crow'), rec = list.find((x) => x.id === Number(row.dataset.id));
+      const box = $('.cbox', row).value.replace(/\s+/g, ' ').trim();
+      if (!box) return toast('Enter the box number first');
+      if (!boxes.includes(box) && !(await confirmDialog(`Box <b>${esc(box)}</b> does not exist yet. Create it for <b>${esc(rec.brand)} ${esc(rec.model)}</b>?`, 'Create box', false))) return;
+      const clean = { brand: rec.brand, model: rec.model, model_number: '', box_number: box, variant: $('.cuv', row).checked ? 'UV' : '', ram: '', storage: '', color: '', imei: '', quantity: null, notes: '', extra: {}, review_reason: '' };
+      btn.disabled = true;
+      const { data, error } = await sb.from('inventory').insert({ ...clean, ...recordKeys(clean), source: 'catalogue' }).select('id').single();
+      if (error) { btn.disabled = false; return toast(friendly(error)); }
+      await audit(`Added ${labelOf(clean)} to box ${box} from catalogue`, data.id);
+      list = list.filter((x) => x.id !== rec.id); if (!boxes.includes(box)) boxes.push(box);
+      toast(`Added to box ${box}`); draw();
+    }));
+  };
+  $('#cb').onchange = draw; $('#cq').oninput = draw; draw();
+}
+
 async function viewDuplicates(page) {
   const groups = must(await sb.rpc('duplicate_groups'));
   page.innerHTML = `<h2>Possible duplicates</h2><p class="muted">Records with the same brand, model, model number <b>and</b> box. Nothing is removed automatically — review each group and delete the extras you don't need.</p>
