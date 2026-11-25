@@ -181,7 +181,7 @@ function viewHome() {
 }
 
 // Brand marks: uses assets/brands/<slug>.svg|png when you add an official logo file, otherwise a clean monogram.
-const LOGO_ALIAS = { iphone: 'apple', ios: 'apple', mi: 'xiaomi', redmi: 'redmi', poco: 'poco' };
+const LOGO_ALIAS = { iphone: 'apple', ios: 'apple', moto: 'motorola', redmi: 'xiaomi', poco: 'xiaomi' };
 function brandMark(name, cls = '') {
   const raw = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const slug = LOGO_ALIAS[raw] && !BRAND_LOGOS.has(raw) ? LOGO_ALIAS[raw] : raw;

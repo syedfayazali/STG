@@ -20,6 +20,7 @@ const ALIASES = [
   [/\bi\s*q\s*[o0]{2}/g, 'iqoo'],
   [/\btechno\b/g, 'tecno'],
   [/\bmotorola\b/g, 'moto'],
+  [/\biphones?\b/g, 'apple'],
   [/\brmi\b|\brm\b/g, 'redmi'],
   [/\binfi\b|\binf\b/g, 'infinix'],
   [/\bhw\b/g, 'huawei'],
